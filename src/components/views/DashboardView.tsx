@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Coins, Wallet, BarChart2, Hourglass, Building2, TrendingUp, Plus, RefreshCw, AlertCircle, AlarmClock, ArrowUpRight, Filter
+  Coins, Wallet, BarChart2, Hourglass, Building2, TrendingUp, Plus, RefreshCw, AlertCircle, AlarmClock, ArrowUpRight, CheckCircle2, BookOpen, Wrench, ShoppingBag, ArrowDownToLine
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -42,6 +42,46 @@ interface DashboardViewProps {
   onChangeTxStatus: (id: string, status: string) => void;
 }
 
+function isMonthInTahap1(dateOrMonthStr: string): boolean {
+  if (!dateOrMonthStr) return true;
+  const lower = dateOrMonthStr.toLowerCase().trim();
+  const bulanTahap1 = ['januari', 'februari', 'maret', 'april', 'mei', 'juni'];
+  if (bulanTahap1.some(m => lower.includes(m))) return true;
+
+  const parts = dateOrMonthStr.split(/[-/]/);
+  if (parts.length >= 2) {
+    if (parts[0].length === 4) {
+      const monthNum = parseInt(parts[1], 10);
+      return monthNum >= 1 && monthNum <= 6;
+    }
+    if (parts[2]?.length === 4) {
+      const monthNum = parseInt(parts[1], 10);
+      return monthNum >= 1 && monthNum <= 6;
+    }
+  }
+  return true;
+}
+
+function isMonthInTahap2(dateOrMonthStr: string): boolean {
+  if (!dateOrMonthStr) return false;
+  const lower = dateOrMonthStr.toLowerCase().trim();
+  const bulanTahap2 = ['juli', 'agustus', 'september', 'oktober', 'november', 'desember'];
+  if (bulanTahap2.some(m => lower.includes(m))) return true;
+
+  const parts = dateOrMonthStr.split(/[-/]/);
+  if (parts.length >= 2) {
+    if (parts[0].length === 4) {
+      const monthNum = parseInt(parts[1], 10);
+      return monthNum >= 7 && monthNum <= 12;
+    }
+    if (parts[2]?.length === 4) {
+      const monthNum = parseInt(parts[1], 10);
+      return monthNum >= 7 && monthNum <= 12;
+    }
+  }
+  return false;
+}
+
 export const DashboardView: React.FC<DashboardViewProps> = ({
   currentUser,
   activeSchoolFilter,
@@ -63,7 +103,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const filteredSchools = schools.filter(s => matchesActiveFilter(s.nama, s.npsn, activeSchoolQuery));
   const filteredTransactions = transactions.filter(t => matchesActiveFilter(t.sekolah, '', activeSchoolQuery));
 
-  // Compute total pagu from monthly pagu
+  // Compute total pagu from monthly pagu or school pagu
   let totalTahap1Pagu = 0;
   let totalTahap2Pagu = 0;
   const bulanTahap1 = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'];
@@ -76,32 +116,67 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   });
 
+  if (totalTahap1Pagu === 0) {
+    totalTahap1Pagu = filteredSchools.reduce((acc, s) => acc + (s.pagu_t1 || 0), 0);
+  }
+  if (totalTahap2Pagu === 0) {
+    totalTahap2Pagu = filteredSchools.reduce((acc, s) => acc + (s.pagu_t2 || 0), 0);
+  }
+
   const totalPaguGlobal = totalTahap1Pagu + totalTahap2Pagu;
 
-  // Realisasi
-  let realisasiT1 = 0;
-  let realisasiT2 = 0;
-  filteredTransactions.forEach(t => {
-    if (t.status === 'Disetujui') {
-      realisasiT1 += t.total_biaya;
-    }
-  });
+  // Realisasi Tahap 1 (Januari - Juni)
+  const bukuT1 = filteredTransactions
+    .filter(t => t.status === 'Disetujui' && t.kategori === 'BUKU' && isMonthInTahap1(t.tanggal))
+    .reduce((acc, t) => acc + t.total_biaya, 0);
 
-  const totalTarikSelesai = tarikTunaiList
-    .filter(t => matchesActiveFilter(t.sekolah, '', activeSchoolQuery) && (t.status === 'Selesai' || t.status === 'Disetujui'))
-    .reduce((acc, curr) => acc + curr.nilai, 0);
+  const alatT1 = filteredTransactions
+    .filter(t => t.status === 'Disetujui' && t.kategori === 'ALAT' && isMonthInTahap1(t.tanggal))
+    .reduce((acc, t) => acc + t.total_biaya, 0);
 
-  const totalSiplah = filteredTransactions
-    .filter(t => t.kategori === 'SIPLAH' && t.status === 'Disetujui')
-    .reduce((acc, curr) => acc + curr.total_biaya, 0);
+  const siplahT1 = filteredTransactions
+    .filter(t => t.status === 'Disetujui' && t.kategori === 'SIPLAH' && isMonthInTahap1(t.tanggal))
+    .reduce((acc, t) => acc + t.total_biaya, 0);
 
-  const totalRealisasiBar = realisasiT1 + totalTarikSelesai;
-  const sisaPaguBersih = totalPaguGlobal - totalRealisasiBar - realisasiT2;
+  const tarikT1 = tarikTunaiList
+    .filter(t => matchesActiveFilter(t.sekolah, '', activeSchoolQuery) && (t.status === 'Selesai' || t.status === 'Disetujui') && isMonthInTahap1(t.bulan))
+    .reduce((acc, t) => acc + t.nilai, 0);
 
-  const totalPercent = totalPaguGlobal > 0 ? (((totalRealisasiBar + totalSiplah) / totalPaguGlobal) * 50).toFixed(1) : '0.0';
+  const totalRealisasiT1 = bukuT1 + alatT1 + siplahT1 + tarikT1;
+  const sisaPaguT1 = totalTahap1Pagu - totalRealisasiT1;
 
-  const t1Percent = totalTahap1Pagu > 0 ? ((totalRealisasiBar / totalTahap1Pagu) * 100).toFixed(1) : '0.0';
-  const t2Percent = totalTahap2Pagu > 0 ? ((realisasiT2 / totalTahap2Pagu) * 100).toFixed(1) : '0.0';
+  // Realisasi Tahap 2 (Juli - Desember)
+  const bukuT2 = filteredTransactions
+    .filter(t => t.status === 'Disetujui' && t.kategori === 'BUKU' && isMonthInTahap2(t.tanggal))
+    .reduce((acc, t) => acc + t.total_biaya, 0);
+
+  const alatT2 = filteredTransactions
+    .filter(t => t.status === 'Disetujui' && t.kategori === 'ALAT' && isMonthInTahap2(t.tanggal))
+    .reduce((acc, t) => acc + t.total_biaya, 0);
+
+  const siplahT2 = filteredTransactions
+    .filter(t => t.status === 'Disetujui' && t.kategori === 'SIPLAH' && isMonthInTahap2(t.tanggal))
+    .reduce((acc, t) => acc + t.total_biaya, 0);
+
+  const tarikT2 = tarikTunaiList
+    .filter(t => matchesActiveFilter(t.sekolah, '', activeSchoolQuery) && (t.status === 'Selesai' || t.status === 'Disetujui') && isMonthInTahap2(t.bulan))
+    .reduce((acc, t) => acc + t.nilai, 0);
+
+  const totalRealisasiT2 = bukuT2 + alatT2 + siplahT2 + tarikT2;
+  const sisaPaguT2 = totalTahap2Pagu - totalRealisasiT2;
+
+  // Realisasi Global
+  const bukuGlobal = bukuT1 + bukuT2;
+  const alatGlobal = alatT1 + alatT2;
+  const siplahGlobal = siplahT1 + siplahT2;
+  const tarikGlobal = tarikT1 + tarikT2;
+
+  const totalRealisasiGlobal = totalRealisasiT1 + totalRealisasiT2;
+  const sisaPaguGlobal = totalPaguGlobal - totalRealisasiGlobal;
+
+  const globalPercent = totalPaguGlobal > 0 ? ((totalRealisasiGlobal / totalPaguGlobal) * 100).toFixed(1) : '0.0';
+  const t1Percent = totalTahap1Pagu > 0 ? ((totalRealisasiT1 / totalTahap1Pagu) * 100).toFixed(1) : '0.0';
+  const t2Percent = totalTahap2Pagu > 0 ? ((totalRealisasiT2 / totalTahap2Pagu) * 100).toFixed(1) : '0.0';
 
   // Chart data
   const monthlyData = MONTHS_LIST.map(m => {
@@ -173,10 +248,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <TrendingUp className="w-24 h-24" />
           </div>
           <div className="space-y-1 relative z-10">
-            <span className="text-[10px] font-bold text-slate-500 tracking-wider uppercase block">Total Realisasi Belanja</span>
-            <h3 className="text-xl font-extrabold text-teal-700">{formatRupiah(totalRealisasiBar)}</h3>
+            <span className="text-[10px] font-bold text-slate-500 tracking-wider uppercase block">Total Realisasi Global</span>
+            <h3 className="text-xl font-extrabold text-teal-700">{formatRupiah(totalRealisasiGlobal)}</h3>
             <span className="text-[10px] text-teal-700 font-bold flex items-center gap-1">
-              <ArrowUpRight className="w-3 h-3" /> <span>{totalPercent}%</span> Terpakai
+              <ArrowUpRight className="w-3 h-3" /> <span>{globalPercent}%</span> Terpakai (T1 + T2)
             </span>
           </div>
           <div className="w-12 h-12 rounded-xl bg-teal-500/10 text-teal-600 flex items-center justify-center">
@@ -189,9 +264,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Hourglass className="w-24 h-24" />
           </div>
           <div className="space-y-1 relative z-10">
-            <span className="text-[10px] font-bold text-slate-500 tracking-wider uppercase block">Sisa Anggaran Tersedia</span>
-            <h3 className="text-xl font-extrabold text-blue-600">{formatRupiah(sisaPaguBersih)}</h3>
-            <span className="inline-block text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded">Selisih Pagu & Belanja</span>
+            <span className="text-[10px] font-bold text-slate-500 tracking-wider uppercase block">Sisa Anggaran Global</span>
+            <h3 className={`text-xl font-extrabold ${sisaPaguGlobal < 0 ? 'text-rose-600' : 'text-blue-600'}`}>
+              {formatRupiah(sisaPaguGlobal)}
+            </h3>
+            <span className="inline-block text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded">Total Pagu - Realisasi</span>
           </div>
           <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
             <Hourglass className="w-6 h-6" />
@@ -205,10 +282,184 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="space-y-1 relative z-10">
             <span className="text-[10px] font-bold text-slate-500 tracking-wider uppercase block">Jumlah Sekolah</span>
             <h3 className="text-2xl font-black text-slate-800">{filteredSchools.length} Sekolah</h3>
-            <span className="inline-block text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded">Bergabung Sistem</span>
+            <span className="inline-block text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded">Terdaftar Sistem</span>
           </div>
           <div className="w-12 h-12 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center">
             <Building2 className="w-6 h-6" />
+          </div>
+        </div>
+      </div>
+
+      {/* RINCIAN REALISASI TAHAP 1, TAHAP 2 & REALISASI GLOBAL */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-purple-600" />
+            Rincian Realisasi Tahap 1, Tahap 2 & Realisasi Global
+          </h3>
+          <span className="text-xs text-slate-500 font-medium">
+            Dikurangi Belanja Modal Buku, Belanja Alat, SIPLah, dan Tarik Tunai
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* TAHAP 1 CARD */}
+          <div className="bg-white border border-purple-100 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-purple-50 rounded-bl-full -mr-6 -mt-6 pointer-events-none"></div>
+            <div>
+              <div className="flex justify-between items-center mb-3">
+                <span className="px-2.5 py-1 bg-purple-100 text-purple-700 font-black rounded-lg text-[10px] uppercase tracking-wider">
+                  Tahap 1 (Jan - Jun)
+                </span>
+                <span className="text-xs font-bold text-slate-500">{t1Percent}%</span>
+              </div>
+
+              <div className="mb-4">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block">Pagu Tahap 1</span>
+                <h4 className="text-lg font-black text-slate-800">{formatRupiah(totalTahap1Pagu)}</h4>
+              </div>
+
+              <div className="space-y-2 text-xs divide-y divide-slate-100">
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><BookOpen className="w-3.5 h-3.5 text-purple-500" /> Belanja Buku</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(bukuT1)}</span>
+                </div>
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><Wrench className="w-3.5 h-3.5 text-cyan-500" /> Belanja Alat</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(alatT1)}</span>
+                </div>
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><ShoppingBag className="w-3.5 h-3.5 text-fuchsia-500" /> Belanja SIPLah</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(siplahT1)}</span>
+                </div>
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><ArrowDownToLine className="w-3.5 h-3.5 text-orange-500" /> Tarik Tunai</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(tarikT1)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 space-y-2">
+              <div className="flex justify-between text-xs font-bold">
+                <span className="text-slate-600">Total Realisasi T1:</span>
+                <span className="text-purple-700">{formatRupiah(totalRealisasiT1)}</span>
+              </div>
+              <div className="flex justify-between text-xs font-bold">
+                <span className="text-slate-600">Sisa Pagu T1:</span>
+                <span className={sisaPaguT1 < 0 ? 'text-rose-600' : 'text-teal-700'}>
+                  {formatRupiah(sisaPaguT1)}
+                </span>
+              </div>
+              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1">
+                <div className="bg-purple-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Number(t1Percent))}%` }}></div>
+              </div>
+            </div>
+          </div>
+
+          {/* TAHAP 2 CARD */}
+          <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-bl-full -mr-6 -mt-6 pointer-events-none"></div>
+            <div>
+              <div className="flex justify-between items-center mb-3">
+                <span className="px-2.5 py-1 bg-blue-100 text-blue-700 font-black rounded-lg text-[10px] uppercase tracking-wider">
+                  Tahap 2 (Jul - Des)
+                </span>
+                <span className="text-xs font-bold text-slate-500">{t2Percent}%</span>
+              </div>
+
+              <div className="mb-4">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block">Pagu Tahap 2</span>
+                <h4 className="text-lg font-black text-slate-800">{formatRupiah(totalTahap2Pagu)}</h4>
+              </div>
+
+              <div className="space-y-2 text-xs divide-y divide-slate-100">
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><BookOpen className="w-3.5 h-3.5 text-purple-500" /> Belanja Buku</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(bukuT2)}</span>
+                </div>
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><Wrench className="w-3.5 h-3.5 text-cyan-500" /> Belanja Alat</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(alatT2)}</span>
+                </div>
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><ShoppingBag className="w-3.5 h-3.5 text-fuchsia-500" /> Belanja SIPLah</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(siplahT2)}</span>
+                </div>
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><ArrowDownToLine className="w-3.5 h-3.5 text-orange-500" /> Tarik Tunai</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(tarikT2)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 space-y-2">
+              <div className="flex justify-between text-xs font-bold">
+                <span className="text-slate-600">Total Realisasi T2:</span>
+                <span className="text-blue-700">{formatRupiah(totalRealisasiT2)}</span>
+              </div>
+              <div className="flex justify-between text-xs font-bold">
+                <span className="text-slate-600">Sisa Pagu T2:</span>
+                <span className={sisaPaguT2 < 0 ? 'text-rose-600' : 'text-teal-700'}>
+                  {formatRupiah(sisaPaguT2)}
+                </span>
+              </div>
+              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1">
+                <div className="bg-blue-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Number(t2Percent))}%` }}></div>
+              </div>
+            </div>
+          </div>
+
+          {/* REALISASI GLOBAL CARD */}
+          <div className="bg-white border border-teal-200 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between relative overflow-hidden bg-gradient-to-br from-white to-teal-50/30">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-teal-100/50 rounded-bl-full -mr-6 -mt-6 pointer-events-none"></div>
+            <div>
+              <div className="flex justify-between items-center mb-3">
+                <span className="px-2.5 py-1 bg-teal-600 text-white font-black rounded-lg text-[10px] uppercase tracking-wider">
+                  Realisasi Global (T1 + T2)
+                </span>
+                <span className="text-xs font-bold text-teal-700">{globalPercent}%</span>
+              </div>
+
+              <div className="mb-4">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Pagu Global</span>
+                <h4 className="text-lg font-black text-slate-800">{formatRupiah(totalPaguGlobal)}</h4>
+              </div>
+
+              <div className="space-y-2 text-xs divide-y divide-slate-100">
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><BookOpen className="w-3.5 h-3.5 text-purple-500" /> Total Belanja Buku</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(bukuGlobal)}</span>
+                </div>
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><Wrench className="w-3.5 h-3.5 text-cyan-500" /> Total Belanja Alat</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(alatGlobal)}</span>
+                </div>
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><ShoppingBag className="w-3.5 h-3.5 text-fuchsia-500" /> Total Belanja SIPLah</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(siplahGlobal)}</span>
+                </div>
+                <div className="flex justify-between pt-1 text-slate-600">
+                  <span className="flex items-center gap-1.5"><ArrowDownToLine className="w-3.5 h-3.5 text-orange-500" /> Total Tarik Tunai</span>
+                  <span className="font-semibold text-slate-800">{formatRupiah(tarikGlobal)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-teal-200/60 space-y-2">
+              <div className="flex justify-between text-xs font-black">
+                <span className="text-slate-700">Total Realisasi Global:</span>
+                <span className="text-teal-700">{formatRupiah(totalRealisasiGlobal)}</span>
+              </div>
+              <div className="flex justify-between text-xs font-black">
+                <span className="text-slate-700">Sisa Pagu Global:</span>
+                <span className={sisaPaguGlobal < 0 ? 'text-rose-600' : 'text-teal-800'}>
+                  {formatRupiah(sisaPaguGlobal)}
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mt-1">
+                <div className="bg-teal-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Number(globalPercent))}%` }}></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -218,12 +469,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="lg:col-span-2 bg-white border border-slate-200/60 rounded-2xl p-6 flex flex-col justify-between space-y-6 shadow-sm">
           <div>
             <h4 className="text-sm font-extrabold text-slate-800 tracking-wide mb-4">
-              Visualisasi Realisasi Anggaran - {currentUser.role !== 'Admin' ? currentUser.instansi : (activeSchoolFilter === 'SEMUA' ? 'Semua Sekolah' : activeSchoolFilter)}
+              Visualisasi Penyerapan Anggaran - {currentUser.role !== 'Admin' ? currentUser.instansi : (activeSchoolFilter === 'SEMUA' ? 'Semua Sekolah' : activeSchoolFilter)}
             </h4>
             <div className="mb-5">
               <div className="flex justify-between text-xs mb-1.5">
                 <span className="text-slate-500 font-semibold">Tahap 1 (Bulan Januari - Juni)</span>
-                <span className="text-slate-800 font-bold">{formatRupiah(totalRealisasiBar)} / {formatRupiah(totalTahap1Pagu)}</span>
+                <span className="text-slate-800 font-bold">{formatRupiah(totalRealisasiT1)} / {formatRupiah(totalTahap1Pagu)}</span>
               </div>
               <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
                 <div className="bg-purple-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Number(t1Percent))}%` }}></div>
@@ -234,10 +485,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
               <div className="flex justify-between text-xs mb-1.5">
                 <span className="text-slate-500 font-semibold">Tahap 2 (Bulan Juli - Desember)</span>
-                <span className="text-slate-800 font-bold">{formatRupiah(realisasiT2)} / {formatRupiah(totalTahap2Pagu)}</span>
+                <span className="text-slate-800 font-bold">{formatRupiah(totalRealisasiT2)} / {formatRupiah(totalTahap2Pagu)}</span>
               </div>
               <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
-                <div className="bg-purple-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Number(t2Percent))}%` }}></div>
+                <div className="bg-blue-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Number(t2Percent))}%` }}></div>
               </div>
               <div className="text-right text-[10px] text-slate-500 mt-1">{t2Percent}% terealisasi</div>
             </div>
@@ -281,12 +532,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-                    <span class="text-xs text-slate-500 font-semibold">Alokasi Tahap 1 (51.9%):</span>
+                    <span className="text-xs text-slate-500 font-semibold">Alokasi Tahap 1:</span>
                   </div>
                   <span className="text-xs font-extrabold text-slate-800">{formatRupiah(totalTahap1Pagu)}</span>
                 </div>
                 <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-amber-500 h-full w-[51.9%]"></div>
+                  <div className="bg-amber-500 h-full w-[50%]"></div>
                 </div>
               </div>
 
@@ -294,12 +545,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-blue-600"></div>
-                    <span className="text-xs text-slate-500 font-semibold">Alokasi Tahap 2 (48.1%):</span>
+                    <span className="text-xs text-slate-500 font-semibold">Alokasi Tahap 2:</span>
                   </div>
                   <span className="text-xs font-extrabold text-slate-800">{formatRupiah(totalTahap2Pagu)}</span>
                 </div>
                 <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-blue-600 h-full w-[48.1%]"></div>
+                  <div className="bg-blue-600 h-full w-[50%]"></div>
                 </div>
               </div>
             </div>
