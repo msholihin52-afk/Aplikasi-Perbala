@@ -1,0 +1,6 @@
+{
+  "name": "Monitoring Perbala - Sistem Keuangan BOSP",
+  "description": "Sistem monitoring dan penatausahaan keuangan BOSP (Bantuan Operasional Satuan Pendidikan) terpadu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

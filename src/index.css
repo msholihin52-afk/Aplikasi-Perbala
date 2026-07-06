@@ -1,0 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+/* Custom Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Print Optimization Style */
+@media print {
+  aside, header, footer, .school-action-col, .user-action-col, .action-column, button {
+    display: none !important;
+  }
+  main {
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+  }
+  .bg-darkcard {
+    background: white !important;
+    border: 1px solid #ccc !important;
+    color: black !important;
+  }
+  .text-slate-800 { color: black !important; }
+  .text-slate-300 { color: #333 !important; }
+  .text-slate-400 { color: #555 !important; }
+  body { background: white !important; color: black !important; }
+}
+
