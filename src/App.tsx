@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db } from './lib/firebase';
 import {
   User, School, MonthlyPagu, RABItem, Transaction, TarikTunai, OrgConfig,
   ToastState, ConfirmModalState, Role, KategoriBelanja
@@ -122,6 +124,68 @@ export default function App() {
   const [editTransactionData, setEditTransactionData] = useState<Transaction | null>(null);
 
   const [showApiConfigModal, setShowApiConfigModal] = useState(false);
+
+  // Real-time synchronization with Firebase Firestore
+  const [isFirebaseLoading, setIsFirebaseLoading] = useState(true);
+
+  // 1. Real-time Subscription to Firestore
+  useEffect(() => {
+    const docRef = doc(db, 'app_data', 'database');
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (Array.isArray(data.schools)) setSchools(data.schools);
+        if (Array.isArray(data.users)) setUsers(data.users);
+        if (Array.isArray(data.monthlyPagu)) setMonthlyPagu(data.monthlyPagu);
+        if (Array.isArray(data.rabList)) setRabList(data.rabList);
+        if (Array.isArray(data.transactions)) setTransactions(data.transactions);
+        if (Array.isArray(data.tarikTunaiList)) setTarikTunaiList(data.tarikTunaiList);
+        if (data.orgConfig) setOrgConfig(data.orgConfig);
+      } else {
+        // Document does not exist. Let's write the first seed!
+        const seedData = {
+          schools: schools.length > 0 ? schools : initialSchools,
+          users: users.length > 0 ? users : initialUsers,
+          monthlyPagu: monthlyPagu.length > 0 ? monthlyPagu : initialMonthlyPagu,
+          rabList: rabList.length > 0 ? rabList : initialRAB,
+          transactions: transactions.length > 0 ? transactions : initialTransactions,
+          tarikTunaiList: tarikTunaiList.length > 0 ? tarikTunaiList : initialTarikTunai,
+          orgConfig: orgConfig.org_name ? orgConfig : defaultOrgConfig
+        };
+        setDoc(docRef, seedData)
+          .then(() => console.log('Successfully seeded default Firebase Database State.'))
+          .catch(err => console.error('Error seeding Firestore database:', err));
+      }
+      setIsFirebaseLoading(false);
+    }, (err) => {
+      console.error('Firestore subscription error, fallback to offline local mode:', err);
+      setIsFirebaseLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Real-time Changes Writing to Firestore with 500ms Debounce
+  useEffect(() => {
+    if (isFirebaseLoading) return;
+
+    const docRef = doc(db, 'app_data', 'database');
+    const timer = setTimeout(() => {
+      setDoc(docRef, {
+        schools,
+        users,
+        monthlyPagu,
+        rabList,
+        transactions,
+        tarikTunaiList,
+        orgConfig
+      }).catch(err => {
+        console.error('Error writing to Firestore:', err);
+      });
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [schools, users, monthlyPagu, rabList, transactions, tarikTunaiList, orgConfig, isFirebaseLoading]);
 
   // Sync to localStorage
   useEffect(() => {
