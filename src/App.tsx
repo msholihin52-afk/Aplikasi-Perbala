@@ -165,27 +165,29 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Real-time Changes Writing to Firestore with 500ms Debounce
-  useEffect(() => {
-    if (isFirebaseLoading) return;
-
+  // 2. Real-time Changes Helper to write specific modifications directly to Firestore
+  const saveToFirestore = useCallback((updatedData: {
+    schools?: School[];
+    users?: User[];
+    monthlyPagu?: MonthlyPagu[];
+    rabList?: RABItem[];
+    transactions?: Transaction[];
+    tarikTunaiList?: TarikTunai[];
+    orgConfig?: OrgConfig;
+  }) => {
     const docRef = doc(db, 'app_data', 'database');
-    const timer = setTimeout(() => {
-      setDoc(docRef, {
-        schools,
-        users,
-        monthlyPagu,
-        rabList,
-        transactions,
-        tarikTunaiList,
-        orgConfig
-      }).catch(err => {
-        console.error('Error writing to Firestore:', err);
-      });
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [schools, users, monthlyPagu, rabList, transactions, tarikTunaiList, orgConfig, isFirebaseLoading]);
+    setDoc(docRef, {
+      schools: updatedData.schools !== undefined ? updatedData.schools : schools,
+      users: updatedData.users !== undefined ? updatedData.users : users,
+      monthlyPagu: updatedData.monthlyPagu !== undefined ? updatedData.monthlyPagu : monthlyPagu,
+      rabList: updatedData.rabList !== undefined ? updatedData.rabList : rabList,
+      transactions: updatedData.transactions !== undefined ? updatedData.transactions : transactions,
+      tarikTunaiList: updatedData.tarikTunaiList !== undefined ? updatedData.tarikTunaiList : tarikTunaiList,
+      orgConfig: updatedData.orgConfig !== undefined ? updatedData.orgConfig : orgConfig
+    }).catch(err => {
+      console.error('Error writing to Firestore:', err);
+    });
+  }, [schools, users, monthlyPagu, rabList, transactions, tarikTunaiList, orgConfig]);
 
   // Sync to localStorage
   useEffect(() => {
@@ -270,27 +272,43 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data.success) {
+          const nextSchools = data.schools || schools;
+          const nextUsers = data.users || users;
+          const nextMonthlyPagu = data.monthly_pagu || monthlyPagu;
+          const nextRab = data.rab || rabList;
+          const nextTransactions = data.transactions || transactions;
+          const nextTarikTunai = data.tarik_tunai || tarikTunaiList;
+          const nextConfig = data.config ? {
+            org_name: data.config.org_name || defaultOrgConfig.org_name,
+            logo_preset: data.config.logo_preset || defaultOrgConfig.logo_preset,
+            logo_url: data.config.logo_url || defaultOrgConfig.logo_url,
+            deadline_t1: data.config.deadline_t1 || defaultOrgConfig.deadline_t1,
+            deadline_t2: data.config.deadline_t2 || defaultOrgConfig.deadline_t2
+          } : orgConfig;
+
           if (data.schools) setSchools(data.schools);
           if (data.users) setUsers(data.users);
           if (data.monthly_pagu) setMonthlyPagu(data.monthly_pagu);
           if (data.rab) setRabList(data.rab);
           if (data.transactions) setTransactions(data.transactions);
           if (data.tarik_tunai) setTarikTunaiList(data.tarik_tunai);
-          if (data.config) {
-            setOrgConfig({
-              org_name: data.config.org_name || defaultOrgConfig.org_name,
-              logo_preset: data.config.logo_preset || defaultOrgConfig.logo_preset,
-              logo_url: data.config.logo_url || defaultOrgConfig.logo_url,
-              deadline_t1: data.config.deadline_t1 || defaultOrgConfig.deadline_t1,
-              deadline_t2: data.config.deadline_t2 || defaultOrgConfig.deadline_t2
-            });
-          }
+          if (data.config) setOrgConfig(nextConfig);
+
+          saveToFirestore({
+            schools: nextSchools,
+            users: nextUsers,
+            monthlyPagu: nextMonthlyPagu,
+            rabList: nextRab,
+            transactions: nextTransactions,
+            tarikTunaiList: nextTarikTunai,
+            orgConfig: nextConfig
+          });
         }
       })
       .catch(err => {
         console.error('API Error:', err);
       });
-  }, [apiUrl]);
+  }, [apiUrl, schools, users, monthlyPagu, rabList, transactions, tarikTunaiList, orgConfig, saveToFirestore]);
 
   // Auth Handlers
   const handleLoginSuccess = (user: User) => {
@@ -338,15 +356,17 @@ export default function App() {
   // 1. School
   const handleSaveSchool = (schData: School) => {
     saveActivity("Simpan Sekolah", `Menyimpan data sekolah ${schData.nama}`);
-    setSchools(prev => {
-      const idx = prev.findIndex(s => s.npsn === schData.npsn);
-      if (idx !== -1) {
-        const copy = [...prev];
-        copy[idx] = schData;
-        return copy;
-      }
-      return [...prev, schData];
-    });
+    const idx = schools.findIndex(s => s.npsn === schData.npsn);
+    let next: School[];
+    if (idx !== -1) {
+      const copy = [...schools];
+      copy[idx] = schData;
+      next = copy;
+    } else {
+      next = [...schools, schData];
+    }
+    setSchools(next);
+    saveToFirestore({ schools: next });
     showToast("Sukses", `Data sekolah ${schData.nama} berhasil disimpan.`, "success");
   };
 
@@ -354,7 +374,9 @@ export default function App() {
     const sch = schools.find(s => s.npsn === npsn);
     openConfirmModal("Hapus Sekolah", `Apakah Anda yakin ingin menghapus data sekolah "${sch?.nama || npsn}"?`, () => {
       saveActivity("Hapus Sekolah", `Menghapus sekolah ${sch?.nama || npsn}`);
-      setSchools(prev => prev.filter(s => s.npsn !== npsn));
+      const next = schools.filter(s => s.npsn !== npsn);
+      setSchools(next);
+      saveToFirestore({ schools: next });
       showToast("Dihapus", "Data sekolah berhasil dihapus.", "info");
     });
   };
@@ -380,30 +402,31 @@ export default function App() {
       return showToast("Error", "Format spreadsheet tidak sesuai (NPSN|Nama|Kecamatan|Siswa|Pagu)", "error");
     }
 
-    setSchools(prev => {
-      const copy = [...prev];
-      parsed.forEach(sch => {
-        const idx = copy.findIndex(s => s.npsn === sch.npsn);
-        if (idx !== -1) copy[idx] = sch;
-        else copy.push(sch);
-      });
-      return copy;
+    const copy = [...schools];
+    parsed.forEach(sch => {
+      const idx = copy.findIndex(s => s.npsn === sch.npsn);
+      if (idx !== -1) copy[idx] = sch;
+      else copy.push(sch);
     });
+    setSchools(copy);
+    saveToFirestore({ schools: copy });
     showToast("Impor Berhasil", `${parsed.length} data sekolah berhasil diimpor.`, "success");
   };
 
   // 2. User
   const handleSaveUser = (usrData: User) => {
     saveActivity("Simpan Pengguna", `Menyimpan data operator ${usrData.nama}`);
-    setUsers(prev => {
-      const idx = prev.findIndex(u => u.username === usrData.username);
-      if (idx !== -1) {
-        const copy = [...prev];
-        copy[idx] = usrData;
-        return copy;
-      }
-      return [...prev, usrData];
-    });
+    const idx = users.findIndex(u => u.username === usrData.username);
+    let next: User[];
+    if (idx !== -1) {
+      const copy = [...users];
+      copy[idx] = usrData;
+      next = copy;
+    } else {
+      next = [...users, usrData];
+    }
+    setUsers(next);
+    saveToFirestore({ users: next });
     showToast("Sukses", `Data operator ${usrData.nama} berhasil disimpan.`, "success");
   };
 
@@ -414,7 +437,9 @@ export default function App() {
     const usr = users.find(u => u.username === username);
     openConfirmModal("Hapus Akses", `Hapus operator "${usr?.nama || username}"?`, () => {
       saveActivity("Hapus Pengguna", `Menolak hak akses operator ${usr?.nama || username}`);
-      setUsers(prev => prev.filter(u => u.username !== username));
+      const next = users.filter(u => u.username !== username);
+      setUsers(next);
+      saveToFirestore({ users: next });
       showToast("Dihapus", "Akses operator berhasil dihapus.", "info");
     });
   };
@@ -441,30 +466,31 @@ export default function App() {
       return showToast("Error", "Format salah (Nama|User|Pass|Role|Instansi)", "error");
     }
 
-    setUsers(prev => {
-      const copy = [...prev];
-      parsed.forEach(usr => {
-        const idx = copy.findIndex(u => u.username === usr.username);
-        if (idx !== -1) copy[idx] = usr;
-        else copy.push(usr);
-      });
-      return copy;
+    const copy = [...users];
+    parsed.forEach(usr => {
+      const idx = copy.findIndex(u => u.username === usr.username);
+      if (idx !== -1) copy[idx] = usr;
+      else copy.push(usr);
     });
+    setUsers(copy);
+    saveToFirestore({ users: copy });
     showToast("Impor Berhasil", `${parsed.length} operator berhasil diimpor.`, "success");
   };
 
   // 3. Monthly Pagu
   const handleSaveMonthlyPagu = (sekolah: string, bulan: string, pagu: number) => {
     saveActivity("Simpan Pagu Bulanan", `Menentukan pagu bulan ${bulan} sekolah ${sekolah}`);
-    setMonthlyPagu(prev => {
-      const idx = prev.findIndex(p => p.sekolah.toLowerCase() === sekolah.toLowerCase() && p.bulan === bulan);
-      if (idx !== -1) {
-        const copy = [...prev];
-        copy[idx] = { sekolah, bulan, pagu };
-        return copy;
-      }
-      return [...prev, { sekolah, bulan, pagu }];
-    });
+    const idx = monthlyPagu.findIndex(p => p.sekolah.toLowerCase() === sekolah.toLowerCase() && p.bulan === bulan);
+    let next: MonthlyPagu[];
+    if (idx !== -1) {
+      const copy = [...monthlyPagu];
+      copy[idx] = { sekolah, bulan, pagu };
+      next = copy;
+    } else {
+      next = [...monthlyPagu, { sekolah, bulan, pagu }];
+    }
+    setMonthlyPagu(next);
+    saveToFirestore({ monthlyPagu: next });
     showToast("Sukses", `Pagu bulan ${bulan} tersimpan.`, "success");
   };
 
@@ -474,7 +500,9 @@ export default function App() {
 
     openConfirmModal("Hapus Pagu Bulanan", `Apakah Anda yakin ingin menghapus alokasi pagu bulanan ${bulan} untuk ${schoolName}?`, () => {
       saveActivity("Hapus Pagu Bulanan", `Menghapus pagu bulanan ${bulan} untuk ${schoolName}`);
-      setMonthlyPagu(prev => prev.filter(p => !(p.sekolah.toLowerCase() === schoolName.toLowerCase() && p.bulan === bulan)));
+      const next = monthlyPagu.filter(p => !(p.sekolah.toLowerCase() === schoolName.toLowerCase() && p.bulan === bulan));
+      setMonthlyPagu(next);
+      saveToFirestore({ monthlyPagu: next });
       showToast("Dihapus", `Pagu bulan ${bulan} dihapus.`, "info");
     });
   };
@@ -482,22 +510,26 @@ export default function App() {
   // 4. RAB
   const handleSaveRab = (rab: RABItem) => {
     saveActivity("Simpan RAB", `Menyimpan Rencana Anggaran ${rab.nama} (RAB)`);
-    setRabList(prev => {
-      const idx = prev.findIndex(r => r.id === rab.id);
-      if (idx !== -1) {
-        const copy = [...prev];
-        copy[idx] = rab;
-        return copy;
-      }
-      return [...prev, rab];
-    });
+    const idx = rabList.findIndex(r => r.id === rab.id);
+    let next: RABItem[];
+    if (idx !== -1) {
+      const copy = [...rabList];
+      copy[idx] = rab;
+      next = copy;
+    } else {
+      next = [...rabList, rab];
+    }
+    setRabList(next);
+    saveToFirestore({ rabList: next });
     showToast("Sukses", `RAB ${rab.nama} berhasil disimpan.`, "success");
   };
 
   const handleDeleteRab = (id: string) => {
     openConfirmModal("Hapus RAB", `Hapus rencana anggaran ${id}?`, () => {
       saveActivity("Hapus RAB", `Menghapus rencana anggaran (RAB) ID ${id}`);
-      setRabList(prev => prev.filter(r => r.id !== id));
+      const next = rabList.filter(r => r.id !== id);
+      setRabList(next);
+      saveToFirestore({ rabList: next });
       showToast("Dihapus", "RAB berhasil dihapus.", "info");
     });
   };
@@ -505,28 +537,34 @@ export default function App() {
   // 5. Transaction Realisasi
   const handleSaveTransaction = (tx: Transaction) => {
     saveActivity("Tambah Transaksi Realisasi", `Mengajukan realisasi belanja ${tx.nama_barang} senilai Rp ${tx.total_biaya}`);
-    setTransactions(prev => {
-      const idx = prev.findIndex(t => t.id === tx.id);
-      if (idx !== -1) {
-        const copy = [...prev];
-        copy[idx] = tx;
-        return copy;
-      }
-      return [tx, ...prev];
-    });
+    const idx = transactions.findIndex(t => t.id === tx.id);
+    let next: Transaction[];
+    if (idx !== -1) {
+      const copy = [...transactions];
+      copy[idx] = tx;
+      next = copy;
+    } else {
+      next = [tx, ...transactions];
+    }
+    setTransactions(next);
+    saveToFirestore({ transactions: next });
     showToast("Sukses", `Transaksi ${tx.nama_barang} tersimpan.`, "success");
   };
 
   const handleChangeTxStatus = (id: string, status: string) => {
     saveActivity("Ubah Status Transaksi", `Mengubah status transaksi ID ${id} menjadi ${status}`);
-    setTransactions(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    const next = transactions.map(t => t.id === id ? { ...t, status } : t);
+    setTransactions(next);
+    saveToFirestore({ transactions: next });
     showToast("Status Diperbarui", `Transaksi ID ${id} diubah menjadi ${status}.`, "info");
   };
 
   const handleDeleteTransaction = (id: string) => {
     openConfirmModal("Hapus Realisasi", `Hapus transaksi realisasi belanja ${id}?`, () => {
       saveActivity("Hapus Realisasi", `Menghapus transaksi realisasi belanja ID ${id}`);
-      setTransactions(prev => prev.filter(t => t.id !== id));
+      const next = transactions.filter(t => t.id !== id);
+      setTransactions(next);
+      saveToFirestore({ transactions: next });
       showToast("Dihapus", "Transaksi berhasil dihapus.", "info");
     });
   };
@@ -534,28 +572,34 @@ export default function App() {
   // 6. Tarik Tunai
   const handleSaveTarik = (item: TarikTunai) => {
     saveActivity("Simpan Tarik Tunai", `Mengajukan pencairan dana tunai ${item.nilai} bulan ${item.bulan}`);
-    setTarikTunaiList(prev => {
-      const idx = prev.findIndex(t => t.id === item.id);
-      if (idx !== -1) {
-        const copy = [...prev];
-        copy[idx] = item;
-        return copy;
-      }
-      return [item, ...prev];
-    });
+    const idx = tarikTunaiList.findIndex(t => t.id === item.id);
+    let next: TarikTunai[];
+    if (idx !== -1) {
+      const copy = [...tarikTunaiList];
+      copy[idx] = item;
+      next = copy;
+    } else {
+      next = [item, ...tarikTunaiList];
+    }
+    setTarikTunaiList(next);
+    saveToFirestore({ tarikTunaiList: next });
     showToast("Sukses", `Pengajuan tarik tunai bulan ${item.bulan} dikirim.`, "success");
   };
 
   const handleApproveTarik = (id: string) => {
     saveActivity("Verifikasi Tarik Tunai", `Menyetujui pencairan dana tunai ${id}`);
-    setTarikTunaiList(prev => prev.map(t => t.id === id ? { ...t, status: 'Selesai', verifikator: currentUser.nama } : t));
+    const next = tarikTunaiList.map(t => t.id === id ? { ...t, status: 'Selesai', verifikator: currentUser.nama } : t);
+    setTarikTunaiList(next);
+    saveToFirestore({ tarikTunaiList: next });
     showToast("Pencairan Selesai", "Status penarikan dana berhasil diperbarui menjadi Selesai.", "success");
   };
 
   const handleDeleteTarik = (id: string) => {
     openConfirmModal("Hapus Penarikan", `Hapus transaksi penarikan ${id}?`, () => {
       saveActivity("Hapus Tarik Tunai", `Menghapus realisasi pencairan tunai ID ${id}`);
-      setTarikTunaiList(prev => prev.filter(t => t.id !== id));
+      const next = tarikTunaiList.filter(t => t.id !== id);
+      setTarikTunaiList(next);
+      saveToFirestore({ tarikTunaiList: next });
       showToast("Dihapus", "Transaksi penarikan dihapus.", "info");
     });
   };
@@ -563,6 +607,7 @@ export default function App() {
   // 7. Org Config
   const handleSaveOrgConfig = (cfg: OrgConfig) => {
     setOrgConfig(cfg);
+    saveToFirestore({ orgConfig: cfg });
     localStorage.setItem('perbala_org_name', cfg.org_name);
     localStorage.setItem('perbala_logo_preset', cfg.logo_preset);
     localStorage.setItem('perbala_logo_url', cfg.logo_url);
@@ -574,6 +619,7 @@ export default function App() {
 
   const handleResetOrgConfig = () => {
     setOrgConfig(defaultOrgConfig);
+    saveToFirestore({ orgConfig: defaultOrgConfig });
     localStorage.removeItem('perbala_org_name');
     localStorage.removeItem('perbala_logo_preset');
     localStorage.removeItem('perbala_logo_url');
